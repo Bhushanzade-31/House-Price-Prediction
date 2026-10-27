@@ -1,1 +1,1 @@
-url = "http://localhost:5173"
+url = "https://house-price-prediction-brown-three.vercel.app/"
