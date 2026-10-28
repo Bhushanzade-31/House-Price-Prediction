@@ -2,51 +2,38 @@ import io
 import os
 from pathlib import Path
 
-import joblib
 import pandas as pd
-from fastapi import FastAPI, HTTPException, UploadFile, File
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+import joblib
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from pydantic import BaseModel
-
-from env import url
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 
-# ---------------------------------------------------------------------------
-# Load ML model and feature names (paths relative to this file)
-# ---------------------------------------------------------------------------
 BASE_DIR = Path(__file__).resolve().parent
+model = joblib.load(BASE_DIR / "housemodel.joblib")
+feature_names = joblib.load(BASE_DIR / "feature_names.joblib")
 
-MODEL_PATH = BASE_DIR / "housemodel.joblib"
-FEATURE_NAMES_PATH = BASE_DIR / "feature_names.joblib"
-
-model = joblib.load(MODEL_PATH)
-feature_names = joblib.load(FEATURE_NAMES_PATH)
-
-# ---------------------------------------------------------------------------
-# CORS
-# ---------------------------------------------------------------------------
-origins = [url.strip().rstrip("/")]
-
-# Optional: extra origin from a Render environment variable named FRONTEND_URL
-extra_origin = os.getenv("FRONTEND_URL", "").strip().rstrip("/")
-if extra_origin and extra_origin not in origins:
-    origins.append(extra_origin)
+frontend_url = os.getenv(
+    "FRONTEND_URL", "https://house-price-prediction-theta.vercel.app"
+).strip().rstrip("/")
+origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+if frontend_url:
+    origins.append(frontend_url)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    # Also allows Vercel preview URLs like house-price-prediction-abc123.vercel.app
-    allow_origin_regex=r"https://house-price-prediction-.*\.vercel\.app",
+    allow_origin_regex=r"https://house-price-prediction(?:-[a-zA-Z0-9-]+)?\.vercel\.app",
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
-# ---------------------------------------------------------------------------
-# Schemas
-# ---------------------------------------------------------------------------
 class HouseFeatures(BaseModel):
     MedInc: float
     HouseAge: float
@@ -58,9 +45,6 @@ class HouseFeatures(BaseModel):
     Longitude: float
 
 
-# ---------------------------------------------------------------------------
-# Routes
-# ---------------------------------------------------------------------------
 @app.get("/")
 def home():
     return {"message": "FastAPI is working!"}
@@ -69,99 +53,52 @@ def home():
 @app.post("/predict")
 def predict(features: HouseFeatures):
     try:
-        data = pd.DataFrame(
-            [[
-                features.MedInc,
-                features.HouseAge,
-                features.AveRooms,
-                features.AveBedrms,
-                features.Population,
-                features.AveOccup,
-                features.Latitude,
-                features.Longitude,
-            ]],
-            columns=feature_names,
-        )
-
-        price = float(model.predict(data)[0]) * 100000
-
+        data = pd.DataFrame([[
+            features.MedInc, features.HouseAge, features.AveRooms,
+            features.AveBedrms, features.Population, features.AveOccup,
+            features.Latitude, features.Longitude,
+        ]], columns=feature_names)
+        price = model.predict(data)[0] * 100000
         return {
             "predicted_price": f"${price:,.0f}",
             "predicted_price_short": f"${price:.2f}",
-            "confidence_range": (
-                f"${price - 39000:,.0f} to ${price + 39000:,.0f}"
-            ),
+            "confidence_range": f"${price-39000:,.0f} to ${price+39000:,.0f}",
         }
-
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-
 @app.post("/predict_csv")
 async def predict_csv(file: UploadFile = File(...)):
-    if not file.filename or not file.filename.lower().endswith(".csv"):
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid file format. Please upload a CSV file.",
-        )
+
+    if not file.filename.endswith('.csv'):
+        raise HTTPException(status_code=400, detail="Invalid file format. Please upload a CSV file.")
+
+    content = await file.read()
+    df=pd.read_csv(io.BytesIO(content))
+
+    required_columns = [
+        'MedInc', 'HouseAge', 'AveRooms', 'AveBedrms', 'Population', 'AveOccup', 'Latitude', 'Longitude'
+    ]
+    missing_columns = [
+        col for col in required_columns
+        if col not in df.columns
+    ]
+    if missing_columns:
+        raise HTTPException(status_code=400,
+                            detail=f"therequired columns are missing  file:  {', '.join(missing_columns)}")
+
+    if len(df) == 0:
+        raise HTTPException(status_code=400, detail="The uploaded CSV file is empty.")
 
     try:
-        content = await file.read()
-        df = pd.read_csv(io.BytesIO(content))
-
-        required_columns = [
-            "MedInc",
-            "HouseAge",
-            "AveRooms",
-            "AveBedrms",
-            "Population",
-            "AveOccup",
-            "Latitude",
-            "Longitude",
-        ]
-
-        missing_columns = [
-            col for col in required_columns if col not in df.columns
-        ]
-
-        if missing_columns:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Missing required columns: {', '.join(missing_columns)}",
-            )
-
-        if df.empty:
-            raise HTTPException(
-                status_code=400,
-                detail="The uploaded CSV file is empty.",
-            )
-
-        # Convert input features to numeric values
-        X = df[required_columns].apply(pd.to_numeric, errors="raise")
-
-        if X.isnull().any().any():
-            raise HTTPException(
-                status_code=400,
-                detail="CSV features cannot contain empty values.",
-            )
-
-        predictions = model.predict(X) * 100000
-        df["PredictedPrice"] = predictions
-
+        predictions = model.predict(df[required_columns])
+        df['PredictedPrice'] = df[required_columns].apply(lambda row: model.predict([row])[0] * 100000, axis=1)
         output = df.to_csv(index=False)
 
         return StreamingResponse(
-            io.BytesIO(output.encode("utf-8")),
+            io.StringIO(output),
             media_type="text/csv",
-            headers={
-                "Content-Disposition": "attachment; filename=predictions.csv"
-            },
+            headers={"Content-Disposition": "attachment; filename=predictions.csv"}
         )
-
-    except HTTPException:
-        raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"An error occurred during prediction: {str(e)}",
-        )
+        raise HTTPException(status_code=500, detail=f"An error occurred during prediction: {str(e)}")

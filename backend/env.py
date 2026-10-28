@@ -1,1 +1,0 @@
-url = "https://house-price-prediction-theta.vercel.app/"
