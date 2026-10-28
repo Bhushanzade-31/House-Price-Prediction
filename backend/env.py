@@ -1,1 +1,1 @@
-url = "https://house-price-prediction-brown-three.vercel.app/"
+url = "https://house-price-prediction-theta.vercel.app/"

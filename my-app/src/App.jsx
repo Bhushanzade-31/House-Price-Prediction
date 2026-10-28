@@ -1,6 +1,6 @@
 import { useState } from "react";
 //import env from "./.env";
-const API_URL = import.meta.env.VITE_API_URL; // add dackend 
+const API_URL = import.meta.env.VITE_API_URL?.replace(/\/+$/, "");
 console.log("API_URL:", API_URL);
 const FIELDS = [
   { key: "MedInc", label: "Median income", hint: "In $10,000s (e.g. 3.9 = $39,000)", def: 3.87 },

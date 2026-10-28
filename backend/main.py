@@ -1,37 +1,52 @@
-
 import io
+import os
 from pathlib import Path
 
 import joblib
 import pandas as pd
-import env
-
 from fastapi import FastAPI, HTTPException, UploadFile, File
-from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+
+from env import url
 
 app = FastAPI()
 
-# Get the directory containing main.py
+# ---------------------------------------------------------------------------
+# Load ML model and feature names (paths relative to this file)
+# ---------------------------------------------------------------------------
 BASE_DIR = Path(__file__).resolve().parent
 
-# Load ML model and feature names
 MODEL_PATH = BASE_DIR / "housemodel.joblib"
 FEATURE_NAMES_PATH = BASE_DIR / "feature_names.joblib"
 
 model = joblib.load(MODEL_PATH)
 feature_names = joblib.load(FEATURE_NAMES_PATH)
 
-# Configure CORS for your frontend
+# ---------------------------------------------------------------------------
+# CORS
+# ---------------------------------------------------------------------------
+origins = [url.strip().rstrip("/")]
+
+# Optional: extra origin from a Render environment variable named FRONTEND_URL
+extra_origin = os.getenv("FRONTEND_URL", "").strip().rstrip("/")
+if extra_origin and extra_origin not in origins:
+    origins.append(extra_origin)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[env.url],
+    allow_origins=origins,
+    # Also allows Vercel preview URLs like house-price-prediction-abc123.vercel.app
+    allow_origin_regex=r"https://house-price-prediction-.*\.vercel\.app",
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
+# ---------------------------------------------------------------------------
+# Schemas
+# ---------------------------------------------------------------------------
 class HouseFeatures(BaseModel):
     MedInc: float
     HouseAge: float
@@ -43,6 +58,9 @@ class HouseFeatures(BaseModel):
     Longitude: float
 
 
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
 @app.get("/")
 def home():
     return {"message": "FastAPI is working!"}
