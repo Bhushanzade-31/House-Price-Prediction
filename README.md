@@ -13,7 +13,8 @@ pip install -r requirements.txt
 ```
 <img width="992" height="817" alt="Screenshot 2026-10-30 185830" src="https://github.com/user-attachments/assets/02ae8193-41db-4b0c-93b3-e4ac8cb629e6" />
 <img width="969" height="756" alt="Screenshot 2026-10-30 185840" src="https://github.com/user-attachments/assets/73d95917-11a1-4d6c-995f-766ba2cd395c" />
-![Uploading Screenshot 2026-10-30 185918.png…]()
+<img width="791" height="487" alt="Screenshot 2026-10-30 185918" src="https://github.com/user-attachments/assets/722996c1-4424-4dc3-beb7-3be1eec2e970" />
+
 
 ## Run
 ```bash
